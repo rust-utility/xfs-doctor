@@ -1,0 +1,22 @@
+[package]
+name = "xfs-doctor"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+categories.workspace = true
+description = """
+xfs-doctor description.
+"""
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["env", "cargo", "derive"] }
+clap-num = "1"
+rhexdump = "0.2"
+
+xfs-lib = { path = "../lib" }

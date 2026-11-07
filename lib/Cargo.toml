@@ -1,0 +1,18 @@
+[package]
+name = "xfs-lib"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+categories.workspace = true
+description = """
+xfs-lib description.
+"""
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bincode = { version = "2.0.0-rc.3", features = ["derive"] }
+uuid = "1.6"
+thiserror = "1"
