@@ -21,6 +21,7 @@ use std::collections::HashMap;
 use std::fs::create_dir_all;
 
 use xfs_lib::carve;
+use xfs_lib::claims::Claims;
 use xfs_lib::raid::Raid0Half;
 use xfs_lib::salvage::{dir_entries, sf_dir_entries, Geometry, Salvage};
 use xfs_lib::xfs::inode::{ForkFormat, Inode, XFS_DINODE_MAGIC};
@@ -118,6 +119,12 @@ enum Command {
         /// Only carve these types (comma separated): png,jpeg,pdf,zip,riff,mp4
         #[arg(long, value_delimiter = ',')]
         types: Vec<String>,
+        /// Claims ledger: ranges carved by earlier passes (default <out>/claims.tsv)
+        #[arg(long)]
+        claims: Option<String>,
+        /// Re-carve a hit that is longer than its previous claim (default true)
+        #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+        upgrade: bool,
     },
     /// Decode a header at a byte offset
     Read {
@@ -206,7 +213,20 @@ fn main() -> anyhow::Result<()> {
             max,
             block,
             types,
-        } => run_carve(&device, &out, from_gib, to_gib, min, max, block as usize, &types),
+            claims,
+            upgrade,
+        } => run_carve(
+            &device,
+            &out,
+            from_gib,
+            to_gib,
+            min,
+            max,
+            block as usize,
+            &types,
+            claims.as_deref(),
+            upgrade,
+        ),
         Command::Salvage {
             device,
             sb,
@@ -608,6 +628,8 @@ fn run_carve(
     max: u64,
     block: usize,
     types: &[String],
+    claims_path: Option<&str>,
+    upgrade: bool,
 ) -> anyhow::Result<()> {
     use std::io::Write as _;
 
@@ -618,6 +640,20 @@ fn run_carve(
     let to = if to_gib == 0 { size } else { (to_gib * 1024 * 1024 * 1024).min(size) };
 
     create_dir_all(std::path::Path::new(out).join("carved"))?;
+    let ledger_path = std::path::PathBuf::from(
+        claims_path
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{out}/claims.tsv")),
+    );
+    let mut claims = Claims::load(&ledger_path)?;
+    let claims_before = claims.len();
+    let bytes_before = claims.total_bytes();
+    println!(
+        "# claims: {} ranges, {:.2} GB already carved ({})",
+        claims_before,
+        bytes_before as f64 / 1073741824.0,
+        ledger_path.display()
+    );
     let carved_dir = std::path::Path::new(out).join("carved");
     let mut manifest = String::from("# offset\ttype\tbytes\tlength\n");
     let mut buf = vec![0u8; 1024 * 1024];
@@ -627,7 +663,23 @@ fn run_carve(
 
     let type_names: Vec<&str> = types.iter().map(|t| t.as_str()).collect();
     let filter = if type_names.is_empty() { None } else { Some(type_names.as_slice()) };
+    let mut skipped_claimed = 0usize;
+    let mut upgraded = 0usize;
     carve::scan_types(&mut scanner, from, to, block, min, max, filter, |hit| {
+        let end = hit.start + hit.len;
+        // greedy: never re-carve what an earlier pass already has, unless this
+        // pass can prove it found more of the same file
+        if claims.covers(hit.start, end) {
+            skipped_claimed += 1;
+            return Ok(());
+        }
+        if claims.find(hit.start).is_some() {
+            if !upgrade {
+                skipped_claimed += 1;
+                return Ok(());
+            }
+            upgraded += 1;
+        }
         let name = format!("{}_{}.{}", hit.start, hit.sig.name, hit.sig.ext);
         let path = carved_dir.join(&name);
         let mut target = File::create(&path)?;
@@ -644,6 +696,7 @@ fn run_carve(
             pos += n as u64;
             left -= n as u64;
         }
+        claims.add(hit.start, end);
         count += 1;
         total += hit.len;
         manifest.push_str(&format!(
@@ -660,7 +713,16 @@ fn run_carve(
         Ok(())
     })?;
 
+    claims.save(&ledger_path)?;
     std::fs::write(std::path::Path::new(out).join("carved.tsv"), manifest)?;
-    println!("# carved={count} bytes={total} out={out}");
+    println!(
+        "# carved={count} upgraded={upgraded} skipped_already_claimed={skipped_claimed} bytes={total} out={out}"
+    );
+    println!(
+        "# claims after: {} ranges, {:.2} GB -> {}",
+        claims.len(),
+        claims.total_bytes() as f64 / 1073741824.0,
+        ledger_path.display()
+    );
     Ok(())
 }

@@ -20,6 +20,7 @@ println!("{} blocks of {} bytes", sb.agblocks(), sb.blocksize());
 */
 
 pub mod carve;
+pub mod claims;
 pub mod raid;
 pub mod salvage;
 pub mod xfs;
