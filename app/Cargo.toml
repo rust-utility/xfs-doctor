@@ -4,9 +4,7 @@ version.workspace = true
 authors.workspace = true
 edition.workspace = true
 categories.workspace = true
-description = """
-xfs-doctor description.
-"""
+description = "Inspect XFS headers (superblock, AGI) on a device or disk image"
 homepage.workspace = true
 keywords.workspace = true
 license.workspace = true
