@@ -50,6 +50,14 @@ pub struct Hit {
 
 const MAX_BOX: u64 = 1 << 40;
 
+/// RIFF form types worth carving; anything else after `RIFF<size>` is noise.
+/// (`RIFF` is common in random data, the four-byte form type is not.)
+pub const RIFF_FORMS: [&[u8]; 5] = [b"AVI ", b"WAVE", b"WEBP", b"CDXA", b"RMID"];
+
+fn riff_ok(body: &[u8]) -> bool {
+    body.len() >= 12 && RIFF_FORMS.iter().any(|form| *form == &body[8..12])
+}
+
 fn read_exact_at<R: Read + Seek>(r: &mut R, offset: u64, buf: &mut [u8]) -> io::Result<bool> {
     r.seek(SeekFrom::Start(offset))?;
     match r.read_exact(buf) {
@@ -92,7 +100,7 @@ pub fn find_end_in_window(window: &[u8], start: usize, sig: &Signature, max_size
     let body = &window[start..limit];
     match sig.kind {
         Kind::Riff => {
-            if body.len() < 8 {
+            if body.len() < 12 || !riff_ok(body) {
                 return None;
             }
             let size = u32::from_le_bytes([body[4], body[5], body[6], body[7]]) as u64;
@@ -171,8 +179,11 @@ pub fn find_end<R: Read + Seek>(
 ) -> io::Result<Option<u64>> {
     match sig.kind {
         Kind::Riff => {
-            let mut hdr = [0u8; 8];
+            let mut hdr = [0u8; 12];
             if !read_exact_at(r, start, &mut hdr)? {
+                return Ok(None);
+            }
+            if !riff_ok(&hdr) {
                 return Ok(None);
             }
             let size = u32::from_le_bytes([hdr[4], hdr[5], hdr[6], hdr[7]]) as u64;
@@ -308,7 +319,27 @@ pub fn scan<R: Read + Seek>(
     max_size: u64,
     mut on_hit: impl FnMut(&Hit) -> io::Result<()>,
 ) -> io::Result<()> {
+    scan_types(r, from, to, block, min_size, max_size, None, on_hit)
+}
+
+/// Like [`scan`], but only considers signatures whose `name` is in `types`
+/// (`None` = all).
+#[allow(clippy::too_many_arguments)]
+pub fn scan_types<R: Read + Seek>(
+    r: &mut R,
+    from: u64,
+    to: u64,
+    block: usize,
+    min_size: u64,
+    max_size: u64,
+    types: Option<&[&str]>,
+    mut on_hit: impl FnMut(&Hit) -> io::Result<()>,
+) -> io::Result<()> {
     let overlap = 16usize;
+    let sigs: Vec<&Signature> = SIGNATURES
+        .iter()
+        .filter(|s| types.map(|t| t.contains(&s.name)).unwrap_or(true))
+        .collect();
     let mut buf = vec![0u8; block];
     let mut pos = from;
     let mut skip_before = from;
@@ -323,7 +354,7 @@ pub fn scan<R: Read + Seek>(
         let window = &buf[..n];
 
         let mut candidates: Vec<(u64, &Signature)> = Vec::new();
-        for sig in SIGNATURES {
+        for sig in &sigs {
             let mut hits = Vec::new();
             find_all(window, sig.magic, pos, &mut hits);
             for (offset, _) in hits {
@@ -454,6 +485,35 @@ mod tests {
             let slow = find_end(&mut r, 0, sig, 1 << 20).unwrap();
             assert_eq!(fast, slow, "{}", sig.name);
         }
+    }
+
+    #[test]
+    fn type_filter_limits_signatures() {
+        let data = blob(&[(64, png()), (2048, riff())], 8192);
+        let mut r = Cursor::new(data);
+        let mut names = Vec::new();
+        scan_types(&mut r, 0, 8192, 4096, 16, 1 << 20, Some(&["riff"]), |h| {
+            names.push(h.sig.name);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(names, vec!["riff"]);
+    }
+
+    #[test]
+    fn riff_requires_a_known_form_type() {
+        let mut good = b"RIFF".to_vec();
+        good.extend_from_slice(&100u32.to_le_bytes());
+        good.extend_from_slice(b"WAVE");
+        good.extend_from_slice(&vec![0u8; 96]);
+        let mut bad = good.clone();
+        bad[8..12].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+
+        let mut r = Cursor::new(good.clone());
+        assert!(find_end(&mut r, 0, &SIGNATURES[4], 1 << 20).unwrap().is_some());
+        let mut r = Cursor::new(bad);
+        assert!(find_end(&mut r, 0, &SIGNATURES[4], 1 << 20).unwrap().is_none());
+        assert!(find_end_in_window(&good, 0, &SIGNATURES[4], 1 << 20).is_some());
     }
 
     #[test]

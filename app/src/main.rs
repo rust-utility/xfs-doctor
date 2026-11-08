@@ -115,6 +115,9 @@ enum Command {
         /// Read block size
         #[arg(long, default_value = "16M", value_parser = parse_size)]
         block: u64,
+        /// Only carve these types (comma separated): png,jpeg,pdf,zip,riff,mp4
+        #[arg(long, value_delimiter = ',')]
+        types: Vec<String>,
     },
     /// Decode a header at a byte offset
     Read {
@@ -202,7 +205,8 @@ fn main() -> anyhow::Result<()> {
             min,
             max,
             block,
-        } => run_carve(&device, &out, from_gib, to_gib, min, max, block as usize),
+            types,
+        } => run_carve(&device, &out, from_gib, to_gib, min, max, block as usize, &types),
         Command::Salvage {
             device,
             sb,
@@ -603,6 +607,7 @@ fn run_carve(
     min: u64,
     max: u64,
     block: usize,
+    types: &[String],
 ) -> anyhow::Result<()> {
     use std::io::Write as _;
 
@@ -620,7 +625,9 @@ fn run_carve(
     let mut total = 0u64;
     let started = std::time::Instant::now();
 
-    carve::scan(&mut scanner, from, to, block, min, max, |hit| {
+    let type_names: Vec<&str> = types.iter().map(|t| t.as_str()).collect();
+    let filter = if type_names.is_empty() { None } else { Some(type_names.as_slice()) };
+    carve::scan_types(&mut scanner, from, to, block, min, max, filter, |hit| {
         let name = format!("{}_{}.{}", hit.start, hit.sig.name, hit.sig.ext);
         let path = carved_dir.join(&name);
         let mut target = File::create(&path)?;
