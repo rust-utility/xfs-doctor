@@ -365,7 +365,7 @@ fn run_salvage(
     let geometry = Geometry::from_sb(&sb_bytes)?;
     let stripe = Raid0Half::new(data_offset, chunk, disks, member)?;
     let salvage = Salvage::new(geometry, stripe);
-    let bs = geometry.blocksize as u64;
+    let _bs = geometry.blocksize as u64;
     let max_inode = (geometry.agcount as u64)
         .saturating_mul(geometry.agblocks as u64)
         << geometry.inopblog;
@@ -395,7 +395,7 @@ fn run_salvage(
     let mut files_skipped = 0usize;
     let mut dirs_parsed = 0usize;
     let mut dir_entries_total = 0usize;
-    let inode_size = geometry.inodesize as usize;
+    let _inode_size = geometry.inodesize as usize;
 
     let chunk = chunk.max(1);
     for ag in 0..geometry.agcount {
@@ -704,7 +704,7 @@ fn run_carve(
             "{}\t{}\t{}\t{}\n",
             hit.start, hit.sig.name, path.display(), hit.len
         ));
-        if count % 200 == 0 {
+        if count.is_multiple_of(200) {
             println!(
                 "# {count} carved, {:.1} MB, elapsed {}s",
                 total as f64 / 1048576.0,

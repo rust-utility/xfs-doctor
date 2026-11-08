@@ -174,7 +174,7 @@ pub fn dir_entries(block: &[u8], max_inode: u64) -> Vec<DirEntry> {
             }
         }
         let entry_len = 9 + namelen + if is_v3 { 1 } else { 0 } + 2;
-        pos += (entry_len + 7) / 8 * 8;
+        pos += entry_len.div_ceil(8) * 8;
     }
     out
 }
@@ -243,7 +243,7 @@ mod tests {
         assert_eq!(g.blocksize, 4096);
         assert_eq!(g.agcount, 32);
         assert_eq!(g.ag_size(), 15_211_392 * 4096);
-        assert_eq!(g.inode_number(01, 0), 1 << (24 + 4));
+        assert_eq!(g.inode_number(1, 0), 1 << (24 + 4));
     }
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
             b[pos + 8] = name.len() as u8;
             b[pos + 9..pos + 9 + name.len()].copy_from_slice(name.as_bytes());
             let entry = 9 + name.len() + 2;
-            let aligned = (entry + 7) / 8 * 8;
+            let aligned = entry.div_ceil(8) * 8;
             let tag_at = pos + aligned - 2;
             b[tag_at..tag_at + 2].copy_from_slice(&(pos as u16).to_be_bytes());
             pos += aligned;
