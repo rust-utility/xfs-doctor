@@ -35,10 +35,31 @@ impl Claims {
     }
 
     /// Insert `[start, end)`, merging with neighbours.
+    ///
+    /// The common case — ranges arriving in ascending order, as carving produces
+    /// them — is O(1) amortised; only an out-of-order insert rebuilds the vector.
     pub fn add(&mut self, start: u64, end: u64) {
         if end <= start {
             return;
         }
+        match self.ranges.last_mut() {
+            None => {
+                self.ranges.push((start, end));
+                return;
+            }
+            Some((last_start, last_end)) => {
+                if start > *last_end {
+                    self.ranges.push((start, end));
+                    return;
+                }
+                if start >= *last_start {
+                    *last_end = (*last_end).max(end);
+                    return;
+                }
+            }
+        }
+
+        // out of order: merge in place
         let mut merged = Vec::with_capacity(self.ranges.len() + 1);
         let mut inserted = false;
         for (s, e) in self.ranges.drain(..) {
@@ -51,7 +72,6 @@ impl Claims {
                 }
                 merged.push((s, e));
             } else {
-                // overlaps or touches: extend
                 let ns = s.min(start);
                 let ne = e.max(end);
                 merged.push((ns, ne));
@@ -62,7 +82,6 @@ impl Claims {
             merged.push((start, end));
         }
         merged.sort_unstable();
-        // re-merge in case the inserted range bridged two neighbours
         let mut out: Vec<(u64, u64)> = Vec::with_capacity(merged.len());
         for (s, e) in merged {
             match out.last_mut() {
@@ -103,6 +122,7 @@ impl Claims {
             Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(claims),
             Err(e) => return Err(e),
         };
+        let mut rows: Vec<(u64, u64)> = Vec::new();
         for line in text.lines() {
             if line.starts_with('#') || line.trim().is_empty() {
                 continue;
@@ -110,6 +130,12 @@ impl Claims {
             let mut parts = line.split('\t');
             let start: u64 = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
             let end: u64 = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
+            if end > start {
+                rows.push((start, end));
+            }
+        }
+        rows.sort_unstable();
+        for (start, end) in rows {
             claims.add(start, end);
         }
         Ok(claims)
@@ -181,5 +207,21 @@ mod tests {
     fn missing_file_is_an_empty_ledger() {
         let loaded = Claims::load(Path::new("/nonexistent/claims.tsv")).unwrap();
         assert!(loaded.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod perf {
+    use super::*;
+
+    #[test]
+    fn ascending_inserts_stay_linear() {
+        let mut c = Claims::new();
+        let t = std::time::Instant::now();
+        for i in 0..400_000u64 {
+            c.add(i * 1000, i * 1000 + 500);
+        }
+        assert_eq!(c.len(), 400_000);
+        assert!(t.elapsed().as_secs() < 5, "took {:?}", t.elapsed());
     }
 }
