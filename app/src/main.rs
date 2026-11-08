@@ -654,6 +654,7 @@ fn run_carve(
         bytes_before as f64 / 1073741824.0,
         ledger_path.display()
     );
+    let _ = std::io::stdout().flush();
     let carved_dir = std::path::Path::new(out).join("carved");
     let mut manifest = String::from("# offset\ttype\tbytes\tlength\n");
     let mut buf = vec![0u8; 1024 * 1024];
@@ -709,6 +710,7 @@ fn run_carve(
                 total as f64 / 1048576.0,
                 started.elapsed().as_secs()
             );
+            let _ = std::io::stdout().flush();
         }
         Ok(())
     })?;
