@@ -152,7 +152,9 @@ pub fn find_end_in_window(window: &[u8], start: usize, sig: &Signature, max_size
             }
         }
         Kind::Gzip => None,
-        Kind::Jpeg | Kind::Pdf | Kind::Zip => {
+        // zip needs central-directory verification, which requires the reader
+        Kind::Zip => None,
+        Kind::Jpeg | Kind::Pdf => {
             let terminator: &[u8] = match sig.kind {
                 Kind::Jpeg => b"\xff\xd9",
                 Kind::Pdf => b"%%EOF",
@@ -247,15 +249,14 @@ pub fn find_end<R: Read + Seek>(
             }
         }
         Kind::Gzip => gzip_len(r, start, max_size),
-        Kind::Jpeg | Kind::Pdf | Kind::Zip => {
+        Kind::Zip => zip_len(r, start, max_size),
+        Kind::Jpeg | Kind::Pdf => {
             let terminator: &[u8] = match sig.kind {
                 Kind::Jpeg => b"\xff\xd9",
-                Kind::Pdf => b"%%EOF",
-                _ => b"PK\x05\x06",
+                _ => b"%%EOF",
             };
             let extra: u64 = match sig.kind {
                 Kind::Pdf => 5,
-                Kind::Zip => 22,
                 _ => 2,
             };
             let mut search_from = start + 2;
@@ -278,13 +279,6 @@ pub fn find_end<R: Read + Seek>(
                             } else if eol[0] == b'\n' || eol[0] == b'\r' {
                                 end += 1;
                             }
-                        }
-                    }
-                    if sig.kind == Kind::Zip {
-                        // zip comment length follows the EOCD signature
-                        let mut c = [0u8; 2];
-                        if read_exact_at(r, search_from + i as u64 + 20, &mut c)? {
-                            end += u16::from_le_bytes(c) as u64;
                         }
                     }
                     let len = end.saturating_sub(start);
@@ -839,6 +833,57 @@ mod inflate {
     }
 }
 
+/// Total length of the zip archive starting at `start`.
+///
+/// `PK\x03\x04` appears at every member *inside* an archive, so the end alone is
+/// not enough: the central directory must exist where the EOCD says and its first
+/// entry must point back at offset 0, which proves we started at the archive start
+/// rather than in the middle of another archive.
+fn zip_len<R: Read + Seek>(r: &mut R, start: u64, max_size: u64) -> io::Result<Option<u64>> {
+    let mut search_from = start + 4;
+    let mut buf = vec![0u8; 1024 * 1024];
+    while search_from < start + max_size {
+        let want = buf.len().min((start + max_size - search_from) as usize);
+        r.seek(SeekFrom::Start(search_from))?;
+        let n = r.read(&mut buf[..want])?;
+        if n == 0 {
+            return Ok(None);
+        }
+        if let Some(i) = find(&buf[..n], b"PK\x05\x06") {
+            let eocd = search_from + i as u64;
+            let mut record = [0u8; 22];
+            if !read_exact_at(r, eocd, &mut record)? {
+                return Ok(None);
+            }
+            let comment = u16::from_le_bytes([record[20], record[21]]) as u64;
+            let end = eocd + 22 + comment;
+            let total = end - start;
+            if total > max_size {
+                return Ok(None);
+            }
+            let cd_offset = u32::from_le_bytes([record[16], record[17], record[18], record[19]]) as u64;
+            let entries = u16::from_le_bytes([record[10], record[11]]);
+            if entries == 0 || cd_offset == 0 || cd_offset >= total {
+                return Ok(None);
+            }
+            let mut cd = [0u8; 46];
+            if !read_exact_at(r, start + cd_offset, &mut cd)? {
+                return Ok(None);
+            }
+            if &cd[0..4] != b"PK\x01\x02" {
+                return Ok(None);
+            }
+            let first_local = u32::from_le_bytes([cd[42], cd[43], cd[44], cd[45]]);
+            if first_local != 0 {
+                return Ok(None); // carved from inside another archive
+            }
+            return Ok(Some(total));
+        }
+        search_from += n as u64 - 4; // overlap for the 4-byte signature
+    }
+    Ok(None)
+}
+
 /// Total length of the gzip member starting at `start`, or `None` when the stream
 /// does not validate against its trailer.
 fn gzip_len<R: Read + Seek>(r: &mut R, start: u64, max_size: u64) -> io::Result<Option<u64>> {
@@ -966,5 +1011,58 @@ mod gzip_tests {
         })
         .unwrap();
         assert_eq!(hits, 0);
+    }
+}
+
+#[cfg(test)]
+mod zip_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    /// 135 bytes: one stored-then-deflated member `hello.txt`.
+    const ZIP: &[u8] = &[
+        0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xa6, 0x6b, 0x69, 0x5d, 0xab, 0x26,
+        0x89, 0xb0, 0x13, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x68, 0x65,
+        0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78, 0x74, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57, 0xa8, 0xca, 0x2c,
+        0x50, 0x48, 0x4e, 0x2c, 0x2a, 0x4b, 0x2d, 0xe2, 0x02, 0x00, 0x50, 0x4b, 0x01, 0x02, 0x14, 0x03,
+        0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xa6, 0x6b, 0x69, 0x5d, 0xab, 0x26, 0x89, 0xb0, 0x13, 0x00,
+        0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78,
+        0x74, 0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x37, 0x00, 0x00,
+        0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+
+    #[test]
+    fn finds_a_complete_archive() {
+        let mut r = Cursor::new(ZIP.to_vec());
+        assert_eq!(zip_len(&mut r, 0, 1 << 20).unwrap(), Some(ZIP.len() as u64));
+    }
+
+    #[test]
+    fn rejects_a_start_inside_the_archive() {
+        // starting at the central directory is not the archive start
+        let cd = 0x37usize;
+        let mut r = Cursor::new(ZIP[cd..].to_vec());
+        assert_eq!(zip_len(&mut r, 0, 1 << 20).unwrap(), None);
+    }
+
+    #[test]
+    fn rejects_a_truncated_archive() {
+        let mut r = Cursor::new(ZIP[..ZIP.len() - 10].to_vec());
+        assert_eq!(zip_len(&mut r, 0, 1 << 20).unwrap(), None);
+    }
+
+    #[test]
+    fn carve_reports_the_full_archive_length() {
+        let mut data = vec![0x41u8; 4096];
+        data[500..500 + ZIP.len()].copy_from_slice(ZIP);
+        let mut r = Cursor::new(data);
+        let mut hits = Vec::new();
+        scan_types(&mut r, 0, 4096, 4096, 16, 1 << 20, Some(&["zip"]), None, |h| {
+            hits.push((h.start, h.len));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(hits, vec![(500, ZIP.len() as u64)]);
     }
 }
