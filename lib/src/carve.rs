@@ -17,6 +17,7 @@ use crate::claims::Claims;
 pub enum Kind {
     Png,
     Gzip,
+    Tar,
     Jpeg,
     Pdf,
     Zip,
@@ -42,6 +43,8 @@ pub const SIGNATURES: &[Signature] = &[
     Signature { name: "riff", ext: "riff", magic: b"RIFF", kind: Kind::Riff, lookbehind: 0 },
     Signature { name: "mp4", ext: "mp4", magic: b"ftyp", kind: Kind::Mp4, lookbehind: 4 },
     Signature { name: "gzip", ext: "gz", magic: b"\x1f\x8b\x08", kind: Kind::Gzip, lookbehind: 0 },
+    // "ustar" sits at offset 257 of a tar header, so the candidate start is behind it
+    Signature { name: "tar", ext: "tar", magic: b"ustar", kind: Kind::Tar, lookbehind: 257 },
 ];
 
 /// A carved range.
@@ -152,8 +155,8 @@ pub fn find_end_in_window(window: &[u8], start: usize, sig: &Signature, max_size
             }
         }
         Kind::Gzip => None,
-        // zip needs central-directory verification, which requires the reader
-        Kind::Zip => None,
+        // zip and tar both need the reader (verification and header walking)
+        Kind::Zip | Kind::Tar => None,
         Kind::Jpeg | Kind::Pdf => {
             let terminator: &[u8] = match sig.kind {
                 Kind::Jpeg => b"\xff\xd9",
@@ -250,6 +253,7 @@ pub fn find_end<R: Read + Seek>(
         }
         Kind::Gzip => gzip_len(r, start, max_size),
         Kind::Zip => zip_len(r, start, max_size),
+        Kind::Tar => tar_len(r, start, max_size),
         Kind::Jpeg | Kind::Pdf => {
             let terminator: &[u8] = match sig.kind {
                 Kind::Jpeg => b"\xff\xd9",
@@ -833,6 +837,88 @@ mod inflate {
     }
 }
 
+/// Parse a tar numeric field (octal, NUL/space padded).
+fn tar_octal(field: &[u8]) -> Option<u64> {
+    let end = field
+        .iter()
+        .position(|c| *c == 0 || *c == b' ')
+        .unwrap_or(field.len());
+    if end == 0 {
+        return Some(0);
+    }
+    let mut value = 0u64;
+    for &c in &field[..end] {
+        if !(b'0'..=b'7').contains(&c) {
+            return None;
+        }
+        value = value.checked_mul(8)?.checked_add((c - b'0') as u64)?;
+    }
+    Some(value)
+}
+
+/// A tar header is 512 bytes with `ustar` at 257 and a checksum over the block.
+fn tar_header_ok(header: &[u8; 512]) -> bool {
+    if &header[257..262] != b"ustar" {
+        return false;
+    }
+    let Some(stored) = tar_octal(&header[148..156]) else {
+        return false;
+    };
+    let mut sum = 0u64;
+    for (i, &byte) in header.iter().enumerate() {
+        sum += if (148..156).contains(&i) {
+            b' ' as u64
+        } else {
+            byte as u64
+        };
+    }
+    sum == stored
+}
+
+/// Total length of the tar archive starting at `start`.
+///
+/// Members are 512-byte headers followed by their data padded to 512 bytes; the
+/// archive ends with two zero blocks. The header checksum rejects random `ustar`
+/// occurrences, and because the walk only reads headers (seeking over data) a
+/// large `--max` costs almost nothing.
+fn tar_len<R: Read + Seek>(r: &mut R, start: u64, max_size: u64) -> io::Result<Option<u64>> {
+    let mut pos = start;
+    let mut members = 0u32;
+    let mut header = [0u8; 512];
+    loop {
+        if pos - start >= max_size {
+            return Ok(None);
+        }
+        if !read_exact_at(r, pos, &mut header)? {
+            return Ok(None);
+        }
+        if header.iter().all(|&b| b == 0) {
+            if members == 0 {
+                return Ok(None); // padding, not an archive start
+            }
+            let mut second = [0u8; 512];
+            if !read_exact_at(r, pos + 512, &mut second)? {
+                return Ok(None);
+            }
+            if !second.iter().all(|&b| b == 0) {
+                return Ok(None);
+            }
+            return Ok(Some(pos + 1024 - start));
+        }
+        if !tar_header_ok(&header) {
+            return Ok(None);
+        }
+        let Some(size) = tar_octal(&header[124..136]) else {
+            return Ok(None);
+        };
+        pos += 512 + size.div_ceil(512) * 512;
+        members += 1;
+        if members > 1_000_000 {
+            return Ok(None);
+        }
+    }
+}
+
 /// Total length of the zip archive starting at `start`.
 ///
 /// `PK\x03\x04` appears at every member *inside* an archive, so the end alone is
@@ -1076,5 +1162,56 @@ mod zip_tests {
         })
         .unwrap();
         assert_eq!(hits, vec![(500, ZIP.len() as u64)]);
+    }
+}
+
+#[cfg(test)]
+mod tar_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    /// A real `tar -cf` archive of one 17-byte file (4096 bytes total).
+    const TAR: &[u8] = include_bytes!("../tests/fixtures/hello.tar");
+
+    #[test]
+    fn finds_a_real_tar() {
+        let mut r = Cursor::new(TAR.to_vec());
+        assert_eq!(tar_len(&mut r, 0, 1 << 20).unwrap(), Some(TAR.len() as u64));
+    }
+
+    #[test]
+    fn carve_reports_the_archive_at_its_start() {
+        let mut data = vec![0x41u8; 8192];
+        data[1000..1000 + TAR.len()].copy_from_slice(TAR);
+        let mut r = Cursor::new(data);
+        let mut hits = Vec::new();
+        scan_types(&mut r, 0, 8192, 4096, 512, 1 << 20, Some(&["tar"]), None, |h| {
+            hits.push((h.start, h.len));
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(hits, vec![(1000, TAR.len() as u64)]);
+    }
+
+    #[test]
+    fn rejects_a_bad_checksum() {
+        let mut bad = TAR.to_vec();
+        bad[0] ^= 0xff; // corrupt the name, checksum no longer matches
+        let mut r = Cursor::new(bad);
+        assert_eq!(tar_len(&mut r, 0, 1 << 20).unwrap(), None);
+    }
+
+    #[test]
+    fn rejects_an_archive_without_the_terminator() {
+        let cut = TAR.len() - 1024; // drop both zero blocks
+        let mut r = Cursor::new(TAR[..cut].to_vec());
+        assert_eq!(tar_len(&mut r, 0, 1 << 20).unwrap(), None);
+    }
+
+    #[test]
+    fn octal_fields_parse_like_tar() {
+        assert_eq!(tar_octal(b"0000644\0"), Some(420));
+        assert_eq!(tar_octal(b"00000000021\0"), Some(17));
+        assert_eq!(tar_octal(b"xxxxxxxxxxx\0"), None);
     }
 }
