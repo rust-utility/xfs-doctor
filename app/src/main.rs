@@ -125,6 +125,10 @@ enum Command {
         /// Re-carve a hit that is longer than its previous claim (default true)
         #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
         upgrade: bool,
+        /// Skip candidates whose offset is already inside a claim, without
+        /// validating them first (cheap, loses upgrades inside claimed ranges)
+        #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+        skip_inside_claims: bool,
     },
     /// Decode a header at a byte offset
     Read {
@@ -215,6 +219,7 @@ fn main() -> anyhow::Result<()> {
             types,
             claims,
             upgrade,
+            skip_inside_claims,
         } => run_carve(
             &device,
             &out,
@@ -226,6 +231,7 @@ fn main() -> anyhow::Result<()> {
             &types,
             claims.as_deref(),
             upgrade,
+            skip_inside_claims,
         ),
         Command::Salvage {
             device,
@@ -630,6 +636,7 @@ fn run_carve(
     types: &[String],
     claims_path: Option<&str>,
     upgrade: bool,
+    skip_inside_claims: bool,
 ) -> anyhow::Result<()> {
     use std::io::Write as _;
 
@@ -666,7 +673,10 @@ fn run_carve(
     let filter = if type_names.is_empty() { None } else { Some(type_names.as_slice()) };
     let mut skipped_claimed = 0usize;
     let mut upgraded = 0usize;
-    carve::scan_types(&mut scanner, from, to, block, min, max, filter, |hit| {
+    // snapshot so the closure can still extend the live ledger
+    let skip_snapshot = if skip_inside_claims { Some(claims.clone()) } else { None };
+    let skip_ref = skip_snapshot.as_ref();
+    carve::scan_types(&mut scanner, from, to, block, min, max, filter, skip_ref, |hit| {
         let end = hit.start + hit.len;
         // greedy: never re-carve what an earlier pass already has, unless this
         // pass can prove it found more of the same file

@@ -11,6 +11,8 @@
 
 use std::io::{self, Read, Seek, SeekFrom};
 
+use crate::claims::Claims;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Png,
@@ -323,7 +325,7 @@ pub fn scan<R: Read + Seek>(
     max_size: u64,
     on_hit: impl FnMut(&Hit) -> io::Result<()>,
 ) -> io::Result<()> {
-    scan_types(r, from, to, block, min_size, max_size, None, on_hit)
+    scan_types(r, from, to, block, min_size, max_size, None, None, on_hit)
 }
 
 /// Like [`scan`], but only considers signatures whose `name` is in `types`
@@ -337,6 +339,7 @@ pub fn scan_types<R: Read + Seek>(
     min_size: u64,
     max_size: u64,
     types: Option<&[&str]>,
+    skip_claimed: Option<&Claims>,
     mut on_hit: impl FnMut(&Hit) -> io::Result<()>,
 ) -> io::Result<()> {
     let overlap = 16usize;
@@ -373,6 +376,13 @@ pub fn scan_types<R: Read + Seek>(
         for (start, sig) in candidates {
             if start < skip_before {
                 continue;
+            }
+            // cheap rejection: the offset is inside a range an earlier pass carved,
+            // so validating this candidate would only find a file we already have
+            if let Some(claims) = skip_claimed {
+                if claims.find(start).is_some() {
+                    continue;
+                }
             }
             let rel = (start - pos) as usize;
             let len = match find_end_in_window(window, rel, sig, max_size) {
@@ -496,7 +506,7 @@ mod tests {
         let data = blob(&[(64, png()), (2048, riff())], 8192);
         let mut r = Cursor::new(data);
         let mut names = Vec::new();
-        scan_types(&mut r, 0, 8192, 4096, 16, 1 << 20, Some(&["riff"]), |h| {
+        scan_types(&mut r, 0, 8192, 4096, 16, 1 << 20, Some(&["riff"]), None, |h| {
             names.push(h.sig.name);
             Ok(())
         })
@@ -936,7 +946,7 @@ mod gzip_tests {
         data[1000..1000 + SMALL.len()].copy_from_slice(SMALL);
         let mut r = Cursor::new(data);
         let mut hits = Vec::new();
-        scan_types(&mut r, 0, 4096, 4096, 16, 1 << 20, Some(&["gzip"]), |h| {
+        scan_types(&mut r, 0, 4096, 4096, 16, 1 << 20, Some(&["gzip"]), None, |h| {
             hits.push((h.start, h.len));
             Ok(())
         })
@@ -950,7 +960,7 @@ mod gzip_tests {
         data[64..67].copy_from_slice(b"\x1f\x8b\x08");
         let mut r = Cursor::new(data);
         let mut hits = 0;
-        scan_types(&mut r, 0, 2048, 1024, 16, 1 << 20, Some(&["gzip"]), |_| {
+        scan_types(&mut r, 0, 2048, 1024, 16, 1 << 20, Some(&["gzip"]), None, |_| {
             hits += 1;
             Ok(())
         })
