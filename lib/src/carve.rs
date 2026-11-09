@@ -879,7 +879,10 @@ fn zip_len<R: Read + Seek>(r: &mut R, start: u64, max_size: u64) -> io::Result<O
             }
             return Ok(Some(total));
         }
-        search_from += n as u64 - 4; // overlap for the 4-byte signature
+        if n <= 4 {
+            return Ok(None); // not enough left for another EOCD candidate
+        }
+        search_from += n as u64 - 3; // overlap for the 4-byte signature
     }
     Ok(None)
 }
@@ -1050,6 +1053,15 @@ mod zip_tests {
     fn rejects_a_truncated_archive() {
         let mut r = Cursor::new(ZIP[..ZIP.len() - 10].to_vec());
         assert_eq!(zip_len(&mut r, 0, 1 << 20).unwrap(), None);
+    }
+
+    #[test]
+    fn stops_when_the_window_is_exhausted() {
+        // regression: a window smaller than the overlap used to spin forever
+        let mut r = Cursor::new(ZIP.to_vec());
+        assert_eq!(zip_len(&mut r, 0, 6).unwrap(), None);
+        let mut r = Cursor::new(ZIP.to_vec());
+        assert_eq!(zip_len(&mut r, 0, 4).unwrap(), None);
     }
 
     #[test]
