@@ -220,37 +220,7 @@ pub fn find_end<R: Read + Seek>(
             }
             Ok(None)
         }
-        Kind::Mp4 => {
-            let mut pos = start;
-            let mut header = [0u8; 8];
-            loop {
-                if !read_exact_at(r, pos, &mut header)? {
-                    return Ok(None);
-                }
-                let mut size = u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as u64;
-                if size == 1 {
-                    let mut ext = [0u8; 8];
-                    if !read_exact_at(r, pos + 8, &mut ext)? {
-                        return Ok(None);
-                    }
-                    size = u64::from_be_bytes(ext);
-                }
-                if size == 0 {
-                    // box extends to end of file: stop at the cap
-                    return Ok((pos - start <= max_size).then_some(pos - start));
-                }
-                if size > MAX_BOX {
-                    return Ok(None);
-                }
-                pos += size;
-                if pos <= start || pos - start > max_size {
-                    return Ok(None);
-                }
-                if pos - start >= max_size {
-                    return Ok(None);
-                }
-            }
-        }
+        Kind::Mp4 => mp4_len(r, start, max_size),
         Kind::Gzip => gzip_len(r, start, max_size),
         Kind::Zip => zip_len(r, start, max_size),
         Kind::Tar => tar_len(r, start, max_size),
@@ -837,6 +807,49 @@ mod inflate {
     }
 }
 
+/// Total length of the MP4 starting at `start`.
+///
+/// Boxes tile the file (`size`, `type`, payload), and the `moov` box carries the
+/// index: an MP4 without it is unplayable, so its presence is the completeness
+/// check. The walk ends at the first box that no longer parses, and only the
+/// boundary of the last *valid* box is returned — a truncated `mdat` therefore
+/// never produces a file that claims to be longer than it is.
+fn mp4_len<R: Read + Seek>(r: &mut R, start: u64, max_size: u64) -> io::Result<Option<u64>> {
+    let mut pos = start;
+    let mut last_good = start;
+    let mut saw_moov = false;
+    let mut header = [0u8; 16];
+    loop {
+        if pos - start >= max_size {
+            break;
+        }
+        if !read_exact_at(r, pos, &mut header)? {
+            break;
+        }
+        let mut size = u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as u64;
+        let kind = &header[4..8];
+        if size == 1 {
+            size = u64::from_be_bytes(header[8..16].try_into().unwrap());
+        }
+        if !(8..=MAX_BOX).contains(&size) || pos - start + size > max_size {
+            break;
+        }
+        if kind == b"moov" {
+            saw_moov = true;
+        }
+        if size == 0 {
+            break; // "extends to end of file": no way to know where it ends
+        }
+        pos += size;
+        last_good = pos;
+    }
+    if saw_moov && last_good > start {
+        Ok(Some(last_good - start))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Parse a tar numeric field (octal, NUL/space padded).
 fn tar_octal(field: &[u8]) -> Option<u64> {
     let end = field
@@ -1213,5 +1226,49 @@ mod tar_tests {
         assert_eq!(tar_octal(b"0000644\0"), Some(420));
         assert_eq!(tar_octal(b"00000000021\0"), Some(17));
         assert_eq!(tar_octal(b"xxxxxxxxxxx\0"), None);
+    }
+}
+
+#[cfg(test)]
+mod mp4_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    fn mp4(with_moov: bool, zero_size_mdat: bool) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(&16u32.to_be_bytes());
+        v.extend_from_slice(b"ftyp");
+        v.extend_from_slice(b"isom0000");
+        if with_moov {
+            v.extend_from_slice(&8u32.to_be_bytes());
+            v.extend_from_slice(b"moov");
+        }
+        let size: u32 = if zero_size_mdat { 0 } else { 108 };
+        v.extend_from_slice(&size.to_be_bytes());
+        v.extend_from_slice(b"mdat");
+        v.extend_from_slice(&[0u8; 100]);
+        v
+    }
+
+    #[test]
+    fn accepts_a_file_that_has_moov() {
+        let data = mp4(true, false);
+        let mut r = Cursor::new(data.clone());
+        assert_eq!(mp4_len(&mut r, 0, 1 << 20).unwrap(), Some(data.len() as u64));
+    }
+
+    #[test]
+    fn rejects_a_file_without_moov() {
+        let data = mp4(false, false);
+        let mut r = Cursor::new(data);
+        assert_eq!(mp4_len(&mut r, 0, 1 << 20).unwrap(), None);
+    }
+
+    #[test]
+    fn stops_before_a_size_zero_box() {
+        let data = mp4(true, true);
+        let mut r = Cursor::new(data);
+        // ftyp (16) + moov (8) are valid; the size-0 mdat is not followed
+        assert_eq!(mp4_len(&mut r, 0, 1 << 20).unwrap(), Some(24));
     }
 }
