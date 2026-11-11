@@ -1,16 +1,4 @@
-# xfs-doctor description
+# xfs-doctor
 
-## Legal
-
-Dual-licensed under `MIT` or the [UNLICENSE](http://unlicense.org/).
-
-## Features
-
-## Usage
-
-Add dependency to Cargo.toml:
-
-```toml
-[dependencies]
-xfs-doctor = "0.1"
-```
+The command-line front end. See the [repository README](../README.md) for usage;
+every subcommand is documented there.

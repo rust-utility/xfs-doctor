@@ -1,16 +1,5 @@
-# xfs-doctor description
+# xfs-lib
 
-## Legal
-
-Dual-licensed under `MIT` or the [UNLICENSE](http://unlicense.org/).
-
-## Features
-
-## Usage
-
-Add dependency to Cargo.toml:
-
-```toml
-[dependencies]
-xfs-doctor = "0.1"
-```
+On-disk XFS decoding and recovery primitives used by `xfs-doctor`:
+superblock/AGI/inode structures, RAID0 member mapping, claims ledger, signature
+carving and structured salvage. See the [repository README](../README.md).
