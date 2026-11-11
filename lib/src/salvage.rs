@@ -147,7 +147,8 @@ pub fn dir_entries(block: &[u8], max_inode: u64) -> Vec<DirEntry> {
     }
     let is_v3 = block.starts_with(b"XDB3") || block.starts_with(b"XDD3");
     let header = if is_v3 { 64 } else { 16 };
-    let count = u32::from_be_bytes(block[block.len() - 8..block.len() - 4].try_into().unwrap()) as usize;
+    let count =
+        u32::from_be_bytes(block[block.len() - 8..block.len() - 4].try_into().unwrap()) as usize;
     let data_end = block
         .len()
         .saturating_sub(8)
@@ -170,7 +171,10 @@ pub fn dir_entries(block: &[u8], max_inode: u64) -> Vec<DirEntry> {
         let name = &block[name_start..name_end];
         if name.iter().all(|c| (32..127).contains(c)) {
             if let Ok(text) = std::str::from_utf8(name) {
-                out.push(DirEntry { ino, name: text.to_string() });
+                out.push(DirEntry {
+                    ino,
+                    name: text.to_string(),
+                });
             }
         }
         let entry_len = 9 + namelen + if is_v3 { 1 } else { 0 } + 2;
@@ -211,7 +215,10 @@ pub fn sf_dir_entries(data: &[u8], max_inode: u64) -> Vec<DirEntry> {
         let name = &data[name_start..name_end];
         if ino != 0 && ino <= max_inode && name.iter().all(|c| (32..127).contains(c)) {
             if let Ok(text) = std::str::from_utf8(name) {
-                out.push(DirEntry { ino, name: text.to_string() });
+                out.push(DirEntry {
+                    ino,
+                    name: text.to_string(),
+                });
             }
         }
         pos = name_end + ino_size;
@@ -272,9 +279,19 @@ mod tests {
         let ag2_block = 2 * 15_211_392u64 + 10;
         assert!(s.block_offset(ag1_block).is_some());
         assert!(s.block_offset(ag2_block).is_none());
-        let extents = [Extent { unwritten: false, startoff: 0, startblock: ag1_block, blockcount: 2 }];
+        let extents = [Extent {
+            unwritten: false,
+            startoff: 0,
+            startblock: ag1_block,
+            blockcount: 2,
+        }];
         assert_eq!(s.readable_runs(&extents).unwrap().len(), 2);
-        let missing = [Extent { unwritten: false, startoff: 0, startblock: ag2_block, blockcount: 1 }];
+        let missing = [Extent {
+            unwritten: false,
+            startoff: 0,
+            startblock: ag2_block,
+            blockcount: 1,
+        }];
         assert!(s.readable_runs(&missing).is_none());
     }
 

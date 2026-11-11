@@ -36,15 +36,63 @@ pub struct Signature {
 }
 
 pub const SIGNATURES: &[Signature] = &[
-    Signature { name: "png", ext: "png", magic: b"\x89PNG\r\n\x1a\n", kind: Kind::Png, lookbehind: 0 },
-    Signature { name: "jpeg", ext: "jpg", magic: b"\xff\xd8\xff", kind: Kind::Jpeg, lookbehind: 0 },
-    Signature { name: "pdf", ext: "pdf", magic: b"%PDF-", kind: Kind::Pdf, lookbehind: 0 },
-    Signature { name: "zip", ext: "zip", magic: b"PK\x03\x04", kind: Kind::Zip, lookbehind: 0 },
-    Signature { name: "riff", ext: "riff", magic: b"RIFF", kind: Kind::Riff, lookbehind: 0 },
-    Signature { name: "mp4", ext: "mp4", magic: b"ftyp", kind: Kind::Mp4, lookbehind: 4 },
-    Signature { name: "gzip", ext: "gz", magic: b"\x1f\x8b\x08", kind: Kind::Gzip, lookbehind: 0 },
+    Signature {
+        name: "png",
+        ext: "png",
+        magic: b"\x89PNG\r\n\x1a\n",
+        kind: Kind::Png,
+        lookbehind: 0,
+    },
+    Signature {
+        name: "jpeg",
+        ext: "jpg",
+        magic: b"\xff\xd8\xff",
+        kind: Kind::Jpeg,
+        lookbehind: 0,
+    },
+    Signature {
+        name: "pdf",
+        ext: "pdf",
+        magic: b"%PDF-",
+        kind: Kind::Pdf,
+        lookbehind: 0,
+    },
+    Signature {
+        name: "zip",
+        ext: "zip",
+        magic: b"PK\x03\x04",
+        kind: Kind::Zip,
+        lookbehind: 0,
+    },
+    Signature {
+        name: "riff",
+        ext: "riff",
+        magic: b"RIFF",
+        kind: Kind::Riff,
+        lookbehind: 0,
+    },
+    Signature {
+        name: "mp4",
+        ext: "mp4",
+        magic: b"ftyp",
+        kind: Kind::Mp4,
+        lookbehind: 4,
+    },
+    Signature {
+        name: "gzip",
+        ext: "gz",
+        magic: b"\x1f\x8b\x08",
+        kind: Kind::Gzip,
+        lookbehind: 0,
+    },
     // "ustar" sits at offset 257 of a tar header, so the candidate start is behind it
-    Signature { name: "tar", ext: "tar", magic: b"ustar", kind: Kind::Tar, lookbehind: 257 },
+    Signature {
+        name: "tar",
+        ext: "tar",
+        magic: b"ustar",
+        kind: Kind::Tar,
+        lookbehind: 257,
+    },
 ];
 
 /// A carved range.
@@ -102,7 +150,12 @@ fn find_all(buf: &[u8], needle: &[u8], from: u64, out: &mut Vec<(u64, usize)>) {
 ///
 /// Returns `Some(len)` when the end is inside `window`, `None` when the caller has
 /// to fall back to `find_end` (which seeks).
-pub fn find_end_in_window(window: &[u8], start: usize, sig: &Signature, max_size: u64) -> Option<u64> {
+pub fn find_end_in_window(
+    window: &[u8],
+    start: usize,
+    sig: &Signature,
+    max_size: u64,
+) -> Option<u64> {
     let limit = window.len().min(start + max_size as usize);
     let body = &window[start..limit];
     match sig.kind {
@@ -117,7 +170,9 @@ pub fn find_end_in_window(window: &[u8], start: usize, sig: &Signature, max_size
         Kind::Png => {
             let mut pos = 8usize;
             while pos + 8 <= body.len() {
-                let len = u32::from_be_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]]) as u64;
+                let len =
+                    u32::from_be_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]])
+                        as u64;
                 let next = pos + 12 + len as usize;
                 if next > body.len() || next <= pos {
                     return None;
@@ -135,7 +190,9 @@ pub fn find_end_in_window(window: &[u8], start: usize, sig: &Signature, max_size
                 if pos + 8 > body.len() {
                     return None;
                 }
-                let mut size = u32::from_be_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]]) as u64;
+                let mut size =
+                    u32::from_be_bytes([body[pos], body[pos + 1], body[pos + 2], body[pos + 3]])
+                        as u64;
                 if size == 1 {
                     if pos + 16 > body.len() {
                         return None;
@@ -474,10 +531,20 @@ mod tests {
         let data = blob(&[(64, png()), (2048, riff())], 8192);
         let mut r = Cursor::new(data);
         let mut names = Vec::new();
-        scan_types(&mut r, 0, 8192, 4096, 16, 1 << 20, Some(&["riff"]), None, |h| {
-            names.push(h.sig.name);
-            Ok(())
-        })
+        scan_types(
+            &mut r,
+            0,
+            8192,
+            4096,
+            16,
+            1 << 20,
+            Some(&["riff"]),
+            None,
+            |h| {
+                names.push(h.sig.name);
+                Ok(())
+            },
+        )
         .unwrap();
         assert_eq!(names, vec!["riff"]);
     }
@@ -492,9 +559,13 @@ mod tests {
         bad[8..12].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
 
         let mut r = Cursor::new(good.clone());
-        assert!(find_end(&mut r, 0, &SIGNATURES[4], 1 << 20).unwrap().is_some());
+        assert!(find_end(&mut r, 0, &SIGNATURES[4], 1 << 20)
+            .unwrap()
+            .is_some());
         let mut r = Cursor::new(bad);
-        assert!(find_end(&mut r, 0, &SIGNATURES[4], 1 << 20).unwrap().is_none());
+        assert!(find_end(&mut r, 0, &SIGNATURES[4], 1 << 20)
+            .unwrap()
+            .is_none());
         assert!(find_end_in_window(&good, 0, &SIGNATURES[4], 1 << 20).is_some());
     }
 
@@ -557,7 +628,11 @@ mod inflate {
 
     impl<'a> BitReader<'a> {
         fn new(data: &'a [u8]) -> Self {
-            Self { data, pos: 0, bit: 0 }
+            Self {
+                data,
+                pos: 0,
+                bit: 0,
+            }
         }
         fn bit(&mut self) -> Option<u32> {
             if self.pos >= self.data.len() {
@@ -766,7 +841,10 @@ mod inflate {
                 _ => return None,
             }
         }
-        Some((Huffman::new(&lengths[..hlit])?, Huffman::new(&lengths[hlit..])?))
+        Some((
+            Huffman::new(&lengths[..hlit])?,
+            Huffman::new(&lengths[hlit..])?,
+        ))
     }
 
     /// Walk a raw DEFLATE stream, counting output bytes.
@@ -803,7 +881,10 @@ mod inflate {
         }
         // the stream ends mid-byte; the trailer starts at the next byte
         br.align();
-        Some(Skipped { consumed: br.consumed(), out_len: out })
+        Some(Skipped {
+            consumed: br.consumed(),
+            out_len: out,
+        })
     }
 }
 
@@ -960,7 +1041,8 @@ fn zip_len<R: Read + Seek>(r: &mut R, start: u64, max_size: u64) -> io::Result<O
             if total > max_size {
                 return Ok(None);
             }
-            let cd_offset = u32::from_le_bytes([record[16], record[17], record[18], record[19]]) as u64;
+            let cd_offset =
+                u32::from_le_bytes([record[16], record[17], record[18], record[19]]) as u64;
             let entries = u16::from_le_bytes([record[10], record[11]]);
             if entries == 0 || cd_offset == 0 || cd_offset >= total {
                 return Ok(None);
@@ -1057,10 +1139,10 @@ mod gzip_tests {
 
     /// 52 bytes: 720 B of repeated text, stored/fixed blocks.
     pub(super) const SMALL: &[u8] = &[
-        0x1f, 0x8b, 0x08, 0x08, 0xed, 0x04, 0xf1, 0x6a, 0x02, 0x03, 0x74, 0x31, 0x2e, 0x74, 0x78, 0x74,
-        0x00, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57, 0x48, 0xaf, 0xca, 0x2c, 0x50, 0x48, 0x4e, 0x2c, 0x2a,
-        0x4b, 0x2d, 0xe2, 0xca, 0x18, 0x15, 0x19, 0x15, 0x19, 0xb2, 0x22, 0x00, 0x50, 0xcb, 0x18, 0xe7,
-        0xd0, 0x02, 0x00, 0x00,
+        0x1f, 0x8b, 0x08, 0x08, 0xed, 0x04, 0xf1, 0x6a, 0x02, 0x03, 0x74, 0x31, 0x2e, 0x74, 0x78,
+        0x74, 0x00, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57, 0x48, 0xaf, 0xca, 0x2c, 0x50, 0x48, 0x4e,
+        0x2c, 0x2a, 0x4b, 0x2d, 0xe2, 0xca, 0x18, 0x15, 0x19, 0x15, 0x19, 0xb2, 0x22, 0x00, 0x50,
+        0xcb, 0x18, 0xe7, 0xd0, 0x02, 0x00, 0x00,
     ];
 
     #[test]
@@ -1093,10 +1175,20 @@ mod gzip_tests {
         data[1000..1000 + SMALL.len()].copy_from_slice(SMALL);
         let mut r = Cursor::new(data);
         let mut hits = Vec::new();
-        scan_types(&mut r, 0, 4096, 4096, 16, 1 << 20, Some(&["gzip"]), None, |h| {
-            hits.push((h.start, h.len));
-            Ok(())
-        })
+        scan_types(
+            &mut r,
+            0,
+            4096,
+            4096,
+            16,
+            1 << 20,
+            Some(&["gzip"]),
+            None,
+            |h| {
+                hits.push((h.start, h.len));
+                Ok(())
+            },
+        )
         .unwrap();
         assert_eq!(hits, vec![(1000, SMALL.len() as u64)]);
     }
@@ -1107,10 +1199,20 @@ mod gzip_tests {
         data[64..67].copy_from_slice(b"\x1f\x8b\x08");
         let mut r = Cursor::new(data);
         let mut hits = 0;
-        scan_types(&mut r, 0, 2048, 1024, 16, 1 << 20, Some(&["gzip"]), None, |_| {
-            hits += 1;
-            Ok(())
-        })
+        scan_types(
+            &mut r,
+            0,
+            2048,
+            1024,
+            16,
+            1 << 20,
+            Some(&["gzip"]),
+            None,
+            |_| {
+                hits += 1;
+                Ok(())
+            },
+        )
         .unwrap();
         assert_eq!(hits, 0);
     }
@@ -1123,15 +1225,15 @@ mod zip_tests {
 
     /// 135 bytes: one stored-then-deflated member `hello.txt`.
     const ZIP: &[u8] = &[
-        0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xa6, 0x6b, 0x69, 0x5d, 0xab, 0x26,
-        0x89, 0xb0, 0x13, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x68, 0x65,
-        0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78, 0x74, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57, 0xa8, 0xca, 0x2c,
-        0x50, 0x48, 0x4e, 0x2c, 0x2a, 0x4b, 0x2d, 0xe2, 0x02, 0x00, 0x50, 0x4b, 0x01, 0x02, 0x14, 0x03,
-        0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xa6, 0x6b, 0x69, 0x5d, 0xab, 0x26, 0x89, 0xb0, 0x13, 0x00,
-        0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78,
-        0x74, 0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x37, 0x00, 0x00,
-        0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xa6, 0x6b, 0x69, 0x5d, 0xab,
+        0x26, 0x89, 0xb0, 0x13, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00,
+        0x68, 0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78, 0x74, 0xcb, 0x48, 0xcd, 0xc9, 0xc9, 0x57,
+        0xa8, 0xca, 0x2c, 0x50, 0x48, 0x4e, 0x2c, 0x2a, 0x4b, 0x2d, 0xe2, 0x02, 0x00, 0x50, 0x4b,
+        0x01, 0x02, 0x14, 0x03, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00, 0xa6, 0x6b, 0x69, 0x5d, 0xab,
+        0x26, 0x89, 0xb0, 0x13, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x68,
+        0x65, 0x6c, 0x6c, 0x6f, 0x2e, 0x74, 0x78, 0x74, 0x50, 0x4b, 0x05, 0x06, 0x00, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x01, 0x00, 0x37, 0x00, 0x00, 0x00, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00,
     ];
 
     #[test]
@@ -1169,10 +1271,20 @@ mod zip_tests {
         data[500..500 + ZIP.len()].copy_from_slice(ZIP);
         let mut r = Cursor::new(data);
         let mut hits = Vec::new();
-        scan_types(&mut r, 0, 4096, 4096, 16, 1 << 20, Some(&["zip"]), None, |h| {
-            hits.push((h.start, h.len));
-            Ok(())
-        })
+        scan_types(
+            &mut r,
+            0,
+            4096,
+            4096,
+            16,
+            1 << 20,
+            Some(&["zip"]),
+            None,
+            |h| {
+                hits.push((h.start, h.len));
+                Ok(())
+            },
+        )
         .unwrap();
         assert_eq!(hits, vec![(500, ZIP.len() as u64)]);
     }
@@ -1198,10 +1310,20 @@ mod tar_tests {
         data[1000..1000 + TAR.len()].copy_from_slice(TAR);
         let mut r = Cursor::new(data);
         let mut hits = Vec::new();
-        scan_types(&mut r, 0, 8192, 4096, 512, 1 << 20, Some(&["tar"]), None, |h| {
-            hits.push((h.start, h.len));
-            Ok(())
-        })
+        scan_types(
+            &mut r,
+            0,
+            8192,
+            4096,
+            512,
+            1 << 20,
+            Some(&["tar"]),
+            None,
+            |h| {
+                hits.push((h.start, h.len));
+                Ok(())
+            },
+        )
         .unwrap();
         assert_eq!(hits, vec![(1000, TAR.len() as u64)]);
     }
@@ -1254,7 +1376,10 @@ mod mp4_tests {
     fn accepts_a_file_that_has_moov() {
         let data = mp4(true, false);
         let mut r = Cursor::new(data.clone());
-        assert_eq!(mp4_len(&mut r, 0, 1 << 20).unwrap(), Some(data.len() as u64));
+        assert_eq!(
+            mp4_len(&mut r, 0, 1 << 20).unwrap(),
+            Some(data.len() as u64)
+        );
     }
 
     #[test]

@@ -318,7 +318,8 @@ fn run_read(device: String, offset: u64, force: bool, what: What) -> anyhow::Res
                 None => offset,
                 Some(ag) => {
                     let sb: XfsSuperBlock = read_at(&mut device, offset, "superblock", false)?;
-                    sb.validate().context("scanning AGIs needs a valid superblock")?;
+                    sb.validate()
+                        .context("scanning AGIs needs a valid superblock")?;
                     let agi_offset = sb.agi_offset(ag)?;
                     println!(
                         "# AGI offset for AG {ag}: {agi_offset:#x} (block {:#x})",
@@ -372,9 +373,8 @@ fn run_salvage(
     let stripe = Raid0Half::new(data_offset, chunk, disks, member)?;
     let salvage = Salvage::new(geometry, stripe);
     let _bs = geometry.blocksize as u64;
-    let max_inode = (geometry.agcount as u64)
-        .saturating_mul(geometry.agblocks as u64)
-        << geometry.inopblog;
+    let max_inode =
+        (geometry.agcount as u64).saturating_mul(geometry.agblocks as u64) << geometry.inopblog;
 
     println!(
         "# fs: {} byte blocks, {} AGs of {} blocks, {} byte inodes",
@@ -385,7 +385,11 @@ fn run_salvage(
         chunk, member, disks, data_offset
     );
 
-    let present = if ags.is_empty() { salvage.present_ags() } else { ags.to_vec() };
+    let present = if ags.is_empty() {
+        salvage.present_ags()
+    } else {
+        ags.to_vec()
+    };
     println!("# scanning AGs: {present:?}");
 
     create_dir_all(out)?;
@@ -515,7 +519,8 @@ fn scan_chunk(
         }
         let mut run = 0usize;
         while pos + run * inode_size + 2 <= buf.len()
-            && buf[pos + run * inode_size..pos + run * inode_size + 2] == XFS_DINODE_MAGIC.to_be_bytes()
+            && buf[pos + run * inode_size..pos + run * inode_size + 2]
+                == XFS_DINODE_MAGIC.to_be_bytes()
         {
             run += 1;
         }
@@ -527,9 +532,12 @@ fn scan_chunk(
         for i in 0..run {
             let slot = pos + i * inode_size;
             let slot_in_ag = ag_offset + slot as u64;
-            let agino = (slot_in_ag / bs) * geometry.inopblock as u64 + (slot_in_ag % bs) / inode_size as u64;
+            let agino = (slot_in_ag / bs) * geometry.inopblock as u64
+                + (slot_in_ag % bs) / inode_size as u64;
             let ino = geometry.inode_number(ag, agino);
-            let Some(inode) = Inode::decode(&buf[slot..slot + inode_size], ino)? else { continue };
+            let Some(inode) = Inode::decode(&buf[slot..slot + inode_size], ino)? else {
+                continue;
+            };
             if inode.mode == 0 || !inode.is_plausible() {
                 continue;
             }
@@ -547,7 +555,11 @@ fn scan_chunk(
                         if std::fs::write(files_dir.join(&file_name), data).is_ok() {
                             *files_written += 1;
                             *bytes_written += data.len() as u64;
-                            manifest.push_str(&format!("{ino}\tfile\t{}\t{}\t\n", data.len(), clean(name.as_deref())));
+                            manifest.push_str(&format!(
+                                "{ino}\tfile\t{}\t{}\t\n",
+                                data.len(),
+                                clean(name.as_deref())
+                            ));
                         }
                     }
                 }
@@ -559,7 +571,8 @@ fn scan_chunk(
                         }
                         *dir_entries_total += 1;
                         names.entry(entry.ino).or_insert_with(|| entry.name.clone());
-                        manifest.push_str(&format!("\tname\t\t{}\t{ino}\n", clean(Some(&entry.name))));
+                        manifest
+                            .push_str(&format!("\tname\t\t{}\t{ino}\n", clean(Some(&entry.name))));
                     }
                 }
                 ForkFormat::Extents if inode.is_regular() => {
@@ -588,7 +601,11 @@ fn scan_chunk(
                             out_file.set_len(inode.size)?;
                             *files_written += 1;
                             *bytes_written += inode.size;
-                            manifest.push_str(&format!("{ino}\tfile\t{}\t{}\t\n", inode.size, clean(name.as_deref())));
+                            manifest.push_str(&format!(
+                                "{ino}\tfile\t{}\t{}\t\n",
+                                inode.size,
+                                clean(name.as_deref())
+                            ));
                         }
                     }
                 }
@@ -598,7 +615,9 @@ fn scan_chunk(
                     }
                     *dirs_parsed += 1;
                     let extents = inode.extents()?;
-                    let Some(runs) = salvage.readable_runs(&extents) else { continue };
+                    let Some(runs) = salvage.readable_runs(&extents) else {
+                        continue;
+                    };
                     let mut block = vec![0u8; bs as usize];
                     for (_, disk, len) in runs {
                         image.seek(SeekFrom::Start(disk))?;
@@ -612,7 +631,10 @@ fn scan_chunk(
                             }
                             *dir_entries_total += 1;
                             names.entry(entry.ino).or_insert_with(|| entry.name.clone());
-                            manifest.push_str(&format!("\tname\t\t{}\t{ino}\n", clean(Some(&entry.name))));
+                            manifest.push_str(&format!(
+                                "\tname\t\t{}\t{ino}\n",
+                                clean(Some(&entry.name))
+                            ));
                         }
                     }
                 }
@@ -644,7 +666,11 @@ fn run_carve(
     let mut scanner = File::open(device).with_context(|| format!("cannot open {device}"))?;
     let size = image.metadata()?.len();
     let from = from_gib * 1024 * 1024 * 1024;
-    let to = if to_gib == 0 { size } else { (to_gib * 1024 * 1024 * 1024).min(size) };
+    let to = if to_gib == 0 {
+        size
+    } else {
+        (to_gib * 1024 * 1024 * 1024).min(size)
+    };
 
     create_dir_all(std::path::Path::new(out).join("carved"))?;
     let ledger_path = std::path::PathBuf::from(
@@ -670,60 +696,81 @@ fn run_carve(
     let started = std::time::Instant::now();
 
     let type_names: Vec<&str> = types.iter().map(|t| t.as_str()).collect();
-    let filter = if type_names.is_empty() { None } else { Some(type_names.as_slice()) };
+    let filter = if type_names.is_empty() {
+        None
+    } else {
+        Some(type_names.as_slice())
+    };
     let mut skipped_claimed = 0usize;
     let mut upgraded = 0usize;
     // snapshot so the closure can still extend the live ledger
-    let skip_snapshot = if skip_inside_claims { Some(claims.clone()) } else { None };
+    let skip_snapshot = if skip_inside_claims {
+        Some(claims.clone())
+    } else {
+        None
+    };
     let skip_ref = skip_snapshot.as_ref();
-    carve::scan_types(&mut scanner, from, to, block, min, max, filter, skip_ref, |hit| {
-        let end = hit.start + hit.len;
-        // greedy: never re-carve what an earlier pass already has, unless this
-        // pass can prove it found more of the same file
-        if claims.covers(hit.start, end) {
-            skipped_claimed += 1;
-            return Ok(());
-        }
-        if claims.find(hit.start).is_some() {
-            if !upgrade {
+    carve::scan_types(
+        &mut scanner,
+        from,
+        to,
+        block,
+        min,
+        max,
+        filter,
+        skip_ref,
+        |hit| {
+            let end = hit.start + hit.len;
+            // greedy: never re-carve what an earlier pass already has, unless this
+            // pass can prove it found more of the same file
+            if claims.covers(hit.start, end) {
                 skipped_claimed += 1;
                 return Ok(());
             }
-            upgraded += 1;
-        }
-        let name = format!("{}_{}.{}", hit.start, hit.sig.name, hit.sig.ext);
-        let path = carved_dir.join(&name);
-        let mut target = File::create(&path)?;
-        let mut left = hit.len;
-        let mut pos = hit.start;
-        while left > 0 {
-            let want = (left as usize).min(buf.len());
-            image.seek(SeekFrom::Start(pos))?;
-            let n = image.read(&mut buf[..want])?;
-            if n == 0 {
-                break;
+            if claims.find(hit.start).is_some() {
+                if !upgrade {
+                    skipped_claimed += 1;
+                    return Ok(());
+                }
+                upgraded += 1;
             }
-            target.write_all(&buf[..n])?;
-            pos += n as u64;
-            left -= n as u64;
-        }
-        claims.add(hit.start, end);
-        count += 1;
-        total += hit.len;
-        manifest.push_str(&format!(
-            "{}\t{}\t{}\t{}\n",
-            hit.start, hit.sig.name, path.display(), hit.len
-        ));
-        if count.is_multiple_of(200) {
-            println!(
-                "# {count} carved, {:.1} MB, elapsed {}s",
-                total as f64 / 1048576.0,
-                started.elapsed().as_secs()
-            );
-            let _ = std::io::stdout().flush();
-        }
-        Ok(())
-    })?;
+            let name = format!("{}_{}.{}", hit.start, hit.sig.name, hit.sig.ext);
+            let path = carved_dir.join(&name);
+            let mut target = File::create(&path)?;
+            let mut left = hit.len;
+            let mut pos = hit.start;
+            while left > 0 {
+                let want = (left as usize).min(buf.len());
+                image.seek(SeekFrom::Start(pos))?;
+                let n = image.read(&mut buf[..want])?;
+                if n == 0 {
+                    break;
+                }
+                target.write_all(&buf[..n])?;
+                pos += n as u64;
+                left -= n as u64;
+            }
+            claims.add(hit.start, end);
+            count += 1;
+            total += hit.len;
+            manifest.push_str(&format!(
+                "{}\t{}\t{}\t{}\n",
+                hit.start,
+                hit.sig.name,
+                path.display(),
+                hit.len
+            ));
+            if count.is_multiple_of(200) {
+                println!(
+                    "# {count} carved, {:.1} MB, elapsed {}s",
+                    total as f64 / 1048576.0,
+                    started.elapsed().as_secs()
+                );
+                let _ = std::io::stdout().flush();
+            }
+            Ok(())
+        },
+    )?;
 
     claims.save(&ledger_path)?;
     std::fs::write(std::path::Path::new(out).join("carved.tsv"), manifest)?;

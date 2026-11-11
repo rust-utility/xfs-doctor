@@ -106,7 +106,11 @@ mod tests {
         let mut buf = fixture();
         buf[0..4].copy_from_slice(&0x58465342u32.to_be_bytes()); // 'XFSB'
         let (_, agi) = XfsAgi::decode(&mut &buf[..]).unwrap();
-        assert!(agi.validate().unwrap_err().to_string().contains("bad AGI magic"));
+        assert!(agi
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("bad AGI magic"));
     }
 
     #[test]

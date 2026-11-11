@@ -111,8 +111,8 @@ mod tests {
             0x56, 0xae, 0xc9, 0xf1, 0x11, 0xec, 0x31, 0xda, 0x58, 0xc1, 0x02, 0xe8, 0x60, 0xe1,
             0xf0, 0x5e,
         ];
-        let (uuid, _) = bincode::decode_from_slice::<XfsUuid, _>(&bytes, bincode::config::standard())
-            .unwrap();
+        let (uuid, _) =
+            bincode::decode_from_slice::<XfsUuid, _>(&bytes, bincode::config::standard()).unwrap();
         assert_eq!(uuid.to_string(), "56aec9f1-11ec-31da-58c1-02e860e1f05e");
     }
 }

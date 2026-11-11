@@ -295,9 +295,13 @@ mod tests {
 
     #[test]
     fn directories_and_symlinks_are_recognised() {
-        let dir = Inode::decode(&fixture(0o040755, 1, 0, 0), 1).unwrap().unwrap();
+        let dir = Inode::decode(&fixture(0o040755, 1, 0, 0), 1)
+            .unwrap()
+            .unwrap();
         assert!(dir.is_dir());
-        let lnk = Inode::decode(&fixture(0o120777, 1, 4, 0), 2).unwrap().unwrap();
+        let lnk = Inode::decode(&fixture(0o120777, 1, 4, 0), 2)
+            .unwrap()
+            .unwrap();
         assert!(lnk.is_symlink());
     }
 }
