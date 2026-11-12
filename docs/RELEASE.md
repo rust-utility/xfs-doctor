@@ -43,7 +43,7 @@ documents, 97 large AVI/WAV/MP4 files, 50 PDFs, 2,580 gzip members (all verified
 ## Install
 
 ```bash
-cargo install --git https://github.com/<you>/xfs-doctor
+cargo install --git https://github.com/rust-utility/xfs-doctor
 ```
 
 or take a binary below. Build from source with `cargo build --release`.
