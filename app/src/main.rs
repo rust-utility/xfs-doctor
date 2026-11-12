@@ -28,7 +28,11 @@ use xfs_lib::xfs::inode::{ForkFormat, Inode, XFS_DINODE_MAGIC};
 use xfs_lib::xfs::{ag::agi::XfsAgi, sb::XfsSuperBlock, XfsHeader, XfsStruct};
 
 #[derive(Debug, Parser)]
-#[command(version, author, about = "Inspect, map, salvage and carve damaged XFS images")]
+#[command(
+    version,
+    author,
+    about = "Inspect, map, salvage and carve damaged XFS images"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
