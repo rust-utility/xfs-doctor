@@ -3,10 +3,10 @@ name = "xfs-doctor"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-categories.workspace = true
+categories = ["command-line-utilities", "filesystem"]
 description = "Inspect, map, salvage and carve damaged XFS images (read-only)"
 homepage.workspace = true
-keywords.workspace = true
+keywords = ["xfs", "recovery", "carving", "disk-image", "forensics"]
 license.workspace = true
 repository.workspace = true
 
@@ -17,4 +17,4 @@ clap = { version = "4", features = ["env", "cargo", "derive"] }
 clap-num = "1"
 rhexdump = "0.2"
 
-xfs-lib = { path = "../lib" }
+xfs-lib = { path = "../lib", version = "0.1.0" }

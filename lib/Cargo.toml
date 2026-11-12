@@ -3,10 +3,10 @@ name = "xfs-lib"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
-categories.workspace = true
+categories = ["filesystem", "parser-implementations"]
 description = "XFS on-disk decoding, RAID0 member mapping, salvage and signature carving"
 homepage.workspace = true
-keywords.workspace = true
+keywords = ["xfs", "filesystem", "recovery", "parsing"]
 license.workspace = true
 repository.workspace = true
 
