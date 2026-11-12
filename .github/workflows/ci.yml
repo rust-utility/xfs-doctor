@@ -22,3 +22,16 @@ jobs:
         run: cargo test --all
       - name: Build release
         run: cargo build --release
+
+      # The workspace lockfile hides dependency-range breakage: a fresh install
+      # resolves the newest semver-compatible version, which is how 0.1.1 shipped
+      # an xfs-lib that did not compile against bincode 2.0.1.
+      - name: Packaged crate builds from a fresh lockfile
+        run: |
+          set -euo pipefail
+          cargo package -p xfs-lib --no-verify
+          rm -rf /tmp/pkg && mkdir -p /tmp/pkg
+          tar -xzf target/package/xfs-lib-*.crate -C /tmp/pkg
+          cd /tmp/pkg/xfs-lib-*
+          rm -f Cargo.lock
+          cargo build --release

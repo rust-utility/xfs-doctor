@@ -29,7 +29,7 @@ pub trait XfsStruct: Sized {
 
 impl<XFS> XfsStruct for XFS
 where
-    XFS: bincode::Decode,
+    XFS: bincode::Decode<()>,
 {
     fn decode<B>(buf_reader: &mut B) -> Result<(Vec<u8>, Self), XfsError>
     where

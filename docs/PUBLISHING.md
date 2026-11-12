@@ -51,6 +51,14 @@ Finally, switch the workflow on: *Settings → Variables → Actions → New var
 `CRATES_IO_PUBLISH` = `true`. Until then `publish.yml` is skipped, so tagging a
 release cannot fail on a missing trusted-publisher configuration.
 
+## Crate pages
+
+`app/README.md` and `lib/README.md` are **symlinks to the root `README.md`**.
+`cargo package` follows them, so each `.crate` carries the full README and
+crates.io renders it; keeping one file means the crate pages cannot drift from the
+repository. Relative links would break on crates.io, so the README uses absolute
+URLs and code spans rather than relative links.
+
 ## Releasing a new version
 
 ```bash

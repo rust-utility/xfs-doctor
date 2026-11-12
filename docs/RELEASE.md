@@ -49,3 +49,16 @@ the limits (no names or directory structure from carving; v4 XFS structures only
 Corrects the `repository` and `homepage` metadata, which 0.1.0 carried over from
 the original scaffold and pointed at a repository that does not exist. No
 functional changes; 0.1.0 is yanked so new builds pick this up.
+
+## 0.1.2
+
+* **Fixes a broken dependency range.** `xfs-lib` required `bincode 2.0.0-rc.3`,
+  whose caret range resolves to 2.0.1 — a release whose `Decode` trait takes a
+  `Context` generic. The workspace lockfile pinned the release candidate, so CI
+  never noticed and 0.1.1 could not be installed from crates.io. The code now
+  targets the stable 2.0 API, and CI builds the packaged crate from a fresh
+  lockfile so this cannot recur.
+* Each crate now ships the repository README (symlinked, so it is one file),
+  which is what crates.io renders on the crate page.
+
+0.1.1 is yanked; 0.1.0 was already yanked for wrong repository metadata.

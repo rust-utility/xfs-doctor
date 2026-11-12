@@ -33,8 +33,8 @@ macro_rules! big_endian_scalar {
             }
         }
 
-        impl bincode::Decode for $name {
-            fn decode<D: bincode::de::Decoder>(
+        impl<Context> bincode::Decode<Context> for $name {
+            fn decode<D: bincode::de::Decoder<Context = Context>>(
                 decoder: &mut D,
             ) -> Result<Self, bincode::error::DecodeError> {
                 decoder.claim_bytes_read($size)?;
@@ -73,11 +73,12 @@ impl From<XfsUuid> for uuid::Uuid {
     }
 }
 
-impl bincode::Decode for XfsUuid {
-    fn decode<D: bincode::de::Decoder>(
+impl<Context> bincode::Decode<Context> for XfsUuid {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
         decoder: &mut D,
     ) -> Result<Self, bincode::error::DecodeError> {
-        <[u8; 16]>::decode(decoder).map(|v| Self(uuid::Uuid::from_bytes(v)))
+        <[u8; 16] as bincode::Decode<Context>>::decode(decoder)
+            .map(|v| Self(uuid::Uuid::from_bytes(v)))
     }
 }
 
