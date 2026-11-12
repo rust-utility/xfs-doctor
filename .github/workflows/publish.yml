@@ -1,0 +1,66 @@
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Package and verify without uploading"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # required for the crates.io OIDC token exchange
+
+jobs:
+  lib:
+    name: xfs-lib
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --all --locked
+
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - name: Publish xfs-lib
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish -p xfs-lib --locked ${{ inputs.dry_run && '--dry-run' || '' }}
+
+  bin:
+    name: xfs-doctor
+    needs: lib
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      # xfs-doctor depends on xfs-lib by version, so the index must have the
+      # release we just published — usually seconds, occasionally longer.
+      - name: Publish xfs-doctor
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 8); do
+            if cargo publish -p xfs-doctor --locked ${{ inputs.dry_run && '--dry-run' || '' }}; then
+              exit 0
+            fi
+            echo "attempt ${attempt}: dependency not on the index yet, retrying in 15s"
+            sleep 15
+          done
+          echo "giving up after 8 attempts" >&2
+          exit 1
