@@ -14,9 +14,13 @@ permissions:
   contents: read
   id-token: write # required for the crates.io OIDC token exchange
 
+# Publishing stays inert until a trusted publisher exists on crates.io.
+# Set the repository variable CRATES_IO_PUBLISH=true after configuring it
+# (see docs/PUBLISHING.md); until then a tag only runs ci.yml and release.yml.
 jobs:
   lib:
     name: xfs-lib
+    if: vars.CRATES_IO_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -38,6 +42,7 @@ jobs:
   bin:
     name: xfs-doctor
     needs: lib
+    if: vars.CRATES_IO_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment: release
     steps:

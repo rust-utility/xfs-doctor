@@ -4,7 +4,7 @@ carve files by content signature when the metadata is gone.
 
 Nothing is ever written to the image.
 
-## What's in 0.1.0
+## What's in this release
 
 ```
 xfs-doctor read sb|agi     decode a superblock or AGI at a byte offset (--force like xfs_db -F)
@@ -43,3 +43,9 @@ or take a binary below. Build from source with `cargo build --release`.
 
 The README covers each subcommand, the validation table above in more detail, and
 the limits (no names or directory structure from carving; v4 XFS structures only).
+
+## 0.1.1
+
+Corrects the `repository` and `homepage` metadata, which 0.1.0 carried over from
+the original scaffold and pointed at a repository that does not exist. No
+functional changes; 0.1.0 is yanked so new builds pick this up.

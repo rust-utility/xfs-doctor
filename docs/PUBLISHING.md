@@ -47,6 +47,10 @@ Then, on crates.io, for **each** crate: *Settings → Trusted Publishing → Add
 After that, revoke the API token you used for the first upload — the workflow no
 longer needs one, and rotating to short-lived tokens is the point.
 
+Finally, switch the workflow on: *Settings → Variables → Actions → New variable*,
+`CRATES_IO_PUBLISH` = `true`. Until then `publish.yml` is skipped, so tagging a
+release cannot fail on a missing trusted-publisher configuration.
+
 ## Releasing a new version
 
 ```bash
