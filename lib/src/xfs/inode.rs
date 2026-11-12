@@ -1,7 +1,7 @@
 //! XFS inode decoding (v4 filesystems: 256-byte inodes, v1/v2 core).
 //!
-//! Field offsets were calibrated against the surviving 2011 `MyBookWorld` image:
-//! `di_size` at 56, `di_nextents` at 76, data fork at 100.
+//! Field offsets follow the XFS v4 dinode layout: `di_size` at 56, `di_nextents`
+//! at 76, data fork at 100.
 
 use crate::xfs::error::XfsError;
 

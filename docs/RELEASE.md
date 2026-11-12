@@ -31,15 +31,6 @@ Passes are **incremental**: each writes a `claims.tsv` ledger of recovered byte
 ranges, and later passes skip what is already claimed — or re-carve a claim when a
 bigger `--max` finds more of the same file.
 
-## Provenance
-
-This was written to recover a single surviving member of a 2-disk RAID0 from a
-2011 NAS whose other disk was lost. Structured salvage stayed blocked (the image
-mixes two array layouts), but carving recovered ~100 GB: 461,868 photos and
-documents, 97 large AVI/WAV/MP4 files, 50 PDFs, 2,580 gzip members (all verified by
-`gzip -t`), 1,650 zip archives (97 % verified by `unzip -t`) and 35 tar archives
-(100 % verified by `tar -tf`).
-
 ## Install
 
 ```bash

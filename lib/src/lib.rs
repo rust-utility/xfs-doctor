@@ -9,7 +9,7 @@ superblock and the AGI header, decoded straight from a device or image with
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 use xfs_lib::xfs::{sb::XfsSuperBlock, XfsHeader, XfsStruct};
 
-let mut file = std::io::BufReader::new(std::fs::File::open("sda4.img")?);
+let mut file = std::io::BufReader::new(std::fs::File::open("disk.img")?);
 let (_bytes, sb) = XfsSuperBlock::decode(&mut file)?;
 sb.validate()?;                       // checks the 'XFSB' magic
 println!("{} blocks of {} bytes", sb.agblocks(), sb.blocksize());

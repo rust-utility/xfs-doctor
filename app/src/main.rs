@@ -5,9 +5,9 @@
 //! fields.
 //!
 //! ```
-//! xfs-doctor read --device sda4.img sb
-//! xfs-doctor read --device sda4.img --offset 0x100000 sb
-//! xfs-doctor read --device sda4.img agi --ag 3
+//! xfs-doctor read --device disk.img sb
+//! xfs-doctor read --device disk.img --offset 0x100000 sb
+//! xfs-doctor read --device disk.img agi --ag 3
 //! ```
 
 use std::fs::File;

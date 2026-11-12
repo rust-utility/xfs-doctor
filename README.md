@@ -7,13 +7,16 @@ the filesystem metadata is beyond reach.
 
 No mount, no `xfs_db` dependency, nothing written to the image.
 
-## Why it exists
+## When to use it
 
-A NAS left one surviving member of a 2-disk RAID0 to deal with. The image begins
-with an md superblock, the filesystem does not start at offset 0, `xfs_db` refuses
-to look past the foreign magic — and the array's other half was gone. This tool
-grew out of that: first to answer "what is actually at this offset", then to recover
-what could be recovered (~100 GB, described below).
+* a filesystem image that will not mount, or that `xfs_db` refuses to open because
+  something else (an md superblock, an offset, another filesystem) sits at the front
+* a RAID member whose array geometry is unknown or whose partners are missing
+* a forensic or pre-repair pass where the image must not be touched
+* metadata too damaged for structured recovery, where content carving is the only
+  route left
+
+Every command is read-only: the image is never written to.
 
 ## Commands
 
@@ -38,21 +41,21 @@ cargo test                 # 61 unit tests, no fixture images needed
 
 ```bash
 # superblock at offset 0, or anywhere (hex accepted)
-xfs-doctor read --device sda4.img sb
-xfs-doctor read --device sda4.img --offset 0x100000 sb
+xfs-doctor read --device disk.img sb
+xfs-doctor read --device disk.img --offset 0x100000 sb
 
 # decode a foreign/garbage header anyway (like xfs_db -F)
-xfs-doctor read --device sda4.img sb --force
+xfs-doctor read --device disk.img sb --force
 
 # AGI by offset, or by AG number (offset derived from the on-disk superblock)
-xfs-doctor read --device sda4.img --offset 0x2000 agi
-xfs-doctor read --device sda4.img agi --ag 3
+xfs-doctor read --device disk.img --offset 0x2000 agi
+xfs-doctor read --device disk.img agi --ag 3
 ```
 
 A wrong magic is an error, not a silent garbage dump:
 
 ```
-$ xfs-doctor read -d sda4.img sb
+$ xfs-doctor read -d disk.img sb
 Error: cannot decode superblock at offset 0x0: bad superblock magic: found 0xfc4e2ba9, expected 0x58465342
 ```
 
@@ -78,7 +81,7 @@ present 0x180000..0x200000 (524288 bytes)
 For the allocation groups that lie entirely on the surviving member:
 
 ```bash
-xfs-doctor salvage --device sda4.img --sb sb-ag1.bin \
+xfs-doctor salvage --device disk.img --sb sb.bin \
   --chunk 512K --data-offset 8K --member 1 --out salvage/ --scan 256M
 ```
 
@@ -91,8 +94,8 @@ It decodes inodes (v1/v2 cores, extent lists, inline data), walks directory bloc
 When the mapping is unknown or the metadata is gone, carve by content:
 
 ```bash
-xfs-doctor carve --device sda4.img --out carve/ --types jpeg,png --max 16M
-xfs-doctor carve --device sda4.img --out carve-big/ --types mp4,riff --min 64K --max 64G
+xfs-doctor carve --device disk.img --out carve/ --types jpeg,png --max 16M
+xfs-doctor carve --device disk.img --out carve-big/ --types mp4,riff --min 64K --max 64G
 ```
 
 Every candidate is validated by the format's own structure, so a bare magic is
@@ -123,28 +126,21 @@ it neither re-carves what an earlier pass found nor loses it:
 Repeated passes with different `--types`/`--max` are therefore cheap and never
 duplicate work.
 
-## What it actually recovered
+## Reliability
 
-From the single RAID0 member described above:
+Structured salvage is only as good as the geometry it is given. Carving does not
+depend on geometry at all, and every format is validated structurally (see the
+table above), so a carve either produces a file that its own tooling accepts or no
+file at all — nothing is written on a bare magic.
 
-| Pass | Result |
-|---|---|
-| photos / docs / jars | 461,868 files, 36.7 GB |
-| large media (`--max 4G`) | 97 AVI/WAV/MP4, 60.3 GB |
-| PDFs (`--max 256M`) | 50 files, 3.1 GB |
-| gzip | 2,580 members, 102 MB — all verified by `gzip -t` |
-| zip | 1,650 archives, 337 MB — 97 % verified by `unzip -t` |
-| tar | 35 archives, 80 MB — 100 % verified by `tar -tf` |
-
-Structured salvage stayed blocked: the image turned out to mix two RAID layouts, so
-no single block mapping explains both the AG superblocks and the data. Carving does
-not care.
+Files whose bytes straddle a region that is missing from the image are either
+rejected by a format's completeness check (gzip, tar, MP4) or come out truncated
+(JPEG, PDF). Passing `--min`/`--max` narrows the search; the claims ledger makes
+repeated passes cheap.
 
 ## Limits
 
 - Carving recovers content, not names or directory structure.
-- A file whose bytes straddle a missing chunk is either rejected (formats with a
-  completeness check) or comes out truncated (formats without one).
 - `salvage` needs the correct geometry; it is only as good as the mapping.
 - XFS v5 (CRC) structures are not decoded — the superblock/AGI/inode layouts here
   are v4.

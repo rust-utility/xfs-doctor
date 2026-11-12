@@ -1,9 +1,10 @@
 //! Signature carving: recover files by content, independent of any filesystem
 //! mapping.
 //!
-//! The image this was written for mixes two RAID layouts, so block→logical
-//! mapping cannot be trusted. Carving only relies on the bytes themselves: find a
-//! signature, follow the format's own structure to the end, copy the range.
+//! On damaged media the filesystem metadata is often unavailable or wrong, so
+//! block→logical mapping cannot be trusted. Carving only relies on the bytes
+//! themselves: find a signature, follow the format's own structure to the end, copy
+//! the range.
 //!
 //! Every carve is validated structurally (chunk walk for PNG, box walk for MP4,
 //! terminator search for JPEG/PDF, EOCD for ZIP, length field for RIFF), which
