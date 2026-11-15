@@ -26,7 +26,9 @@ permissions:
 ## One-time setup (per crate, requires the crate to exist)
 
 crates.io only lets you configure a trusted publisher for a crate that is already
-registered, so the **first release is manual**:
+registered, so the **first release of a new crate is manual** — and it always will
+be, for every crate added later. That is what the API token in
+`~/.cargo/credentials` is kept for: bootstrapping, not for releases.
 
 ```bash
 cargo login                      # paste a crates.io API token
@@ -44,12 +46,20 @@ Then, on crates.io, for **each** crate: *Settings → Trusted Publishing → Add
 | Workflow filename | `publish.yml` |
 | Environment | `release` |
 
-After that, revoke the API token you used for the first upload — the workflow no
-longer needs one, and rotating to short-lived tokens is the point.
+**The local token stays.** It never leaves this machine — no
+`CARGO_REGISTRY_TOKEN` secret is configured in the repository — and it is the only
+way to register a crate for the first time. Releases never use it: they go through
+the OIDC exchange, which is why losing the token would not block shipping updates.
 
-Finally, switch the workflow on: *Settings → Variables → Actions → New variable*,
-`CRATES_IO_PUBLISH` = `true`. Until then `publish.yml` is skipped, so tagging a
-release cannot fail on a missing trusted-publisher configuration.
+Verify the handshake after configuring a trusted publisher: *Actions → publish →
+Run workflow* with `dry_run: true`. It performs the OIDC exchange and packages
+both crates without uploading, so a misconfigured workflow name, repository or
+environment shows up immediately instead of on a release tag.
+
+Publishing is gated on the repository variable `CRATES_IO_PUBLISH` (*Settings →
+Variables → Actions*), currently `true`. Set it to `false` to let a tag stop after
+CI and the GitHub release, for example while a trusted publisher is being set up
+for a new crate.
 
 ## Crate pages
 
