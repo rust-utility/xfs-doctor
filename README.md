@@ -112,6 +112,22 @@ never enough:
 | gzip | DEFLATE walk (symbols only, no decompression) | decoded length must equal the trailer ISIZE |
 | tar | 512-byte header walk to the two zero blocks | per-header checksum |
 
+### Inspecting before writing
+
+```bash
+xfs-doctor carve --device disk.img --out report/ --types jpeg,png,mp4 --report true
+```
+
+```
+# report: 188 candidates, 9.6 MB (nothing written)
+#   jpeg       187 files       9.45 MB
+#   png          1 files       0.17 MB
+```
+
+`--report` validates candidates exactly as a carve would — the counts and sizes match
+— but writes only `report.tsv` and leaves the claims ledger untouched. Use it to ask
+"what is in this image", or to size a carve before running it.
+
 ### Incremental passes: the claims ledger
 
 Each pass writes `claims.tsv` (claimed byte ranges). A later pass consults it, so

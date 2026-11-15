@@ -72,8 +72,9 @@ URLs and code spans rather than relative links.
 ## Releasing a new version
 
 ```bash
-# bump the version in Cargo.toml ([workspace.package] version), commit
-git commit -am "release: 0.1.1"
+# bump [workspace.package] version AND the xfs-lib requirement in app/Cargo.toml
+# (a minor bump does not satisfy the previous "^0.1" range — cargo refuses to build)
+git commit -am "release: 0.2.1"
 git tag -a v0.1.1 -m "xfs-doctor 0.1.1"
 git push --follow-tags origin main
 ```

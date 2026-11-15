@@ -17,4 +17,4 @@ clap = { version = "4", features = ["env", "cargo", "derive"] }
 clap-num = "1"
 rhexdump = "0.2"
 
-xfs-lib = { path = "../lib", version = "0.1.0" }
+xfs-lib = { path = "../lib", version = "0.2" }

@@ -62,3 +62,12 @@ functional changes; 0.1.0 is yanked so new builds pick this up.
   which is what crates.io renders on the crate page.
 
 0.1.1 is yanked; 0.1.0 was already yanked for wrong repository metadata.
+
+## 0.2.0
+
+* **`carve --report`** — validate and count candidates without writing anything
+  (no files, no claims, just `report.tsv` plus a per-format summary). The numbers
+  are identical to a real carve, so you can size a pass or ask what an image
+  contains before allocating space for the output.
+* `cargo publish --dry-run` in CI is unchanged; publishing now runs through
+  crates.io Trusted Publishing on a `v*` tag.

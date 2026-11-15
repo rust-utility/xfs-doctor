@@ -133,6 +133,9 @@ enum Command {
         /// validating them first (cheap, loses upgrades inside claimed ranges)
         #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
         skip_inside_claims: bool,
+        /// Only report what would be carved: no files, no claims, just offsets
+        #[arg(long, default_value_t = false, action = clap::ArgAction::Set)]
+        report: bool,
     },
     /// Decode a header at a byte offset
     Read {
@@ -224,6 +227,7 @@ fn main() -> anyhow::Result<()> {
             claims,
             upgrade,
             skip_inside_claims,
+            report,
         } => run_carve(
             &device,
             &out,
@@ -236,6 +240,7 @@ fn main() -> anyhow::Result<()> {
             claims.as_deref(),
             upgrade,
             skip_inside_claims,
+            report,
         ),
         Command::Salvage {
             device,
@@ -663,6 +668,7 @@ fn run_carve(
     claims_path: Option<&str>,
     upgrade: bool,
     skip_inside_claims: bool,
+    report: bool,
 ) -> anyhow::Result<()> {
     use std::io::Write as _;
 
@@ -707,6 +713,7 @@ fn run_carve(
     };
     let mut skipped_claimed = 0usize;
     let mut upgraded = 0usize;
+    let mut report_rows: Vec<(u64, &'static str, u64)> = Vec::new();
     // snapshot so the closure can still extend the live ledger
     let skip_snapshot = if skip_inside_claims {
         Some(claims.clone())
@@ -738,6 +745,21 @@ fn run_carve(
                 }
                 upgraded += 1;
             }
+            if report {
+                report_rows.push((hit.start, hit.sig.name, hit.len));
+                count += 1;
+                total += hit.len;
+                if count.is_multiple_of(200) {
+                    println!(
+                        "# {count} candidates, {:.1} MB, elapsed {}s",
+                        total as f64 / 1048576.0,
+                        started.elapsed().as_secs()
+                    );
+                    let _ = std::io::stdout().flush();
+                }
+                return Ok(());
+            }
+
             let name = format!("{}_{}.{}", hit.start, hit.sig.name, hit.sig.ext);
             let path = carved_dir.join(&name);
             let mut target = File::create(&path)?;
@@ -775,6 +797,37 @@ fn run_carve(
             Ok(())
         },
     )?;
+
+    if report {
+        let mut rows = String::from("# offset\ttype\tbytes\n");
+        for (offset, kind, len) in &report_rows {
+            rows.push_str(&format!("{offset}\t{kind}\t{len}\n"));
+        }
+        std::fs::write(std::path::Path::new(out).join("report.tsv"), rows)?;
+
+        let mut per_type: std::collections::BTreeMap<&str, (usize, u64)> = Default::default();
+        for (_, kind, len) in &report_rows {
+            let entry = per_type.entry(kind).or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 += len;
+        }
+        println!(
+            "# report: {} candidates, {:.1} MB (nothing written)",
+            count,
+            total as f64 / 1048576.0
+        );
+        for (kind, (n, bytes)) in per_type {
+            println!(
+                "#   {kind:<6} {n:>7} files {:>10.2} MB",
+                bytes as f64 / 1048576.0
+            );
+        }
+        println!(
+            "# saved {}",
+            std::path::Path::new(out).join("report.tsv").display()
+        );
+        return Ok(());
+    }
 
     claims.save(&ledger_path)?;
     std::fs::write(std::path::Path::new(out).join("carved.tsv"), manifest)?;
